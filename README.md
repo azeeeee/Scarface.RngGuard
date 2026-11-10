@@ -34,6 +34,20 @@ Logging=1     ; 0 = do not write a log file
 Advanced options (log size cap, individual log categories, guard toggle) are in
 the generated file under `[Advanced]` and normally do not need changing.
 
+## Optional fixes (off by default)
+
+Under `[Fixes]` in the ini:
+
+```ini
+[Fixes]
+Fix3DAudioPitch=1     ; stop 3D sounds changing pitch with distance
+GuardAudioDivZero=1   ; prevent a rare divide-by-zero in the audio sequencer
+```
+
+`Fix3DAudioPitch` reproduces the 3D listener change GangstaPatch makes (its
+"3D Audio causing pitch changes" fix). Both options are opt-in because they
+change audio behaviour; the crash guards stay on by default.
+
 ## Build
 
 ```

@@ -50,9 +50,11 @@ struct Config
     int logInvalidLists; // LogInvalidLists
     int logCrashes;      // LogCrashes
     int logStack;        // LogStackTraces
+    int fix3dAudio;      // Fix3DAudioPitch
+    int guardAudioDiv;   // GuardAudioDivZero
 };
 
-static Config g_cfg = { 1, 1, 1024, 1, 1, 1, 1 };
+static Config g_cfg = { 1, 1, 1024, 1, 1, 1, 1, 0, 0 };
 static char   g_iniPath[MAX_PATH];
 
 #define INI_SECTION "General"
@@ -104,7 +106,16 @@ static void WriteDefaultIni(void)
         "LogBadRanges=1\r\n"
         "LogInvalidLists=1\r\n"
         "LogCrashes=1\r\n"
-        "LogStackTraces=1\r\n";
+        "LogStackTraces=1\r\n"
+        "\r\n"
+        "[Fixes]\r\n"
+        "; Stops 3D-positioned sounds from changing pitch with distance\r\n"
+        "; (the same listener change GangstaPatch makes). 1 = enabled, 0 = off.\r\n"
+        "Fix3DAudioPitch=0\r\n"
+        "\r\n"
+        "; Prevent a rare divide-by-zero in the audio sequence scale helper\r\n"
+        "; (would otherwise crash the game). 1 = enabled, 0 = off.\r\n"
+        "GuardAudioDivZero=0\r\n";
 
     HANDLE h = CreateFileA(g_iniPath, GENERIC_WRITE, 0, NULL,
                            CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -114,6 +125,38 @@ static void WriteDefaultIni(void)
         WriteFile(h, kDefaultIni, (DWORD)(sizeof(kDefaultIni) - 1), &written, NULL);
         CloseHandle(h);
     }
+}
+
+// Append keys added by newer builds to an ini created by an older one.
+static void EnsureIniKeys(void)
+{
+    if (GetFileAttributesA(g_iniPath) == INVALID_FILE_ATTRIBUTES)
+        return;
+
+    char tmp[8] = { 0 };
+    if (GetPrivateProfileStringA("Fixes", "Fix3DAudioPitch", "",
+                                 tmp, sizeof(tmp), g_iniPath) != 0)
+        return; // already present
+
+    HANDLE h = CreateFileA(g_iniPath, FILE_APPEND_DATA,
+                           FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
+                           OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h == INVALID_HANDLE_VALUE)
+        return;
+
+    static const char kAdd[] =
+        "\r\n[Fixes]\r\n"
+        "; Stops 3D-positioned sounds from changing pitch with distance\r\n"
+        "; (the same listener change GangstaPatch makes). 1 = enabled, 0 = off.\r\n"
+        "Fix3DAudioPitch=0\r\n"
+        "\r\n"
+        "; Prevent a rare divide-by-zero in the audio sequence scale helper\r\n"
+        "; (would otherwise crash the game). 1 = enabled, 0 = off.\r\n"
+        "GuardAudioDivZero=0\r\n";
+
+    DWORD written = 0;
+    WriteFile(h, kAdd, (DWORD)(sizeof(kAdd) - 1), &written, NULL);
+    CloseHandle(h);
 }
 
 static void LoadConfig(void)
@@ -134,6 +177,8 @@ static void LoadConfig(void)
     g_cfg.logInvalidLists = IniInt2(INI_ADVANCED, "Settings", "LogInvalidLists", 1);
     g_cfg.logCrashes      = IniInt2(INI_ADVANCED, "Settings", "LogCrashes", 1);
     g_cfg.logStack        = IniInt2(INI_ADVANCED, "Settings", "LogStackTraces", 1);
+    g_cfg.fix3dAudio      = IniInt2("Fixes", INI_ADVANCED, "Fix3DAudioPitch", 0);
+    g_cfg.guardAudioDiv   = IniInt2("Fixes", INI_ADVANCED, "GuardAudioDivZero", 0);
 
     if (g_cfg.maxKB < 0)     g_cfg.maxKB = 0;
     if (g_cfg.maxKB > 65536) g_cfg.maxKB = 65536;
@@ -801,6 +846,133 @@ static void InstallPickerGuard(void)
 }
 
 // ---------------------------------------------------------------------------
+// Optional: 3D audio pitch fix
+//
+// scarface.exe initialises its 3D listener at 0x6EF190. The three floats that
+// follow the position/velocity/orientation vectors (globals 0x85D120/0x85D124/
+// 0x85D128) are set to 1.0. The game's mixer uses the first two as a
+// distance/rolloff scale, which modulates the playback pitch of 3D sounds as
+// they move relative to the camera. Setting them to 0.0 stops that pitch
+// shifting (this is the change GangstaPatch makes for its "3D Audio causing
+// pitch changes" fix).
+//
+//   0x6EF21C  mov dword [0x85D120], 3F800000h   -> 00000000h
+//   0x6EF226  mov dword [0x85D124], 3F800000h   -> 00000000h
+// ---------------------------------------------------------------------------
+static const uintptr_t AUDIO_LISTENER_P0 = 0x006EF21C; // immediate, [0x85D120] = 1.0f
+static const uintptr_t AUDIO_LISTENER_P1 = 0x006EF226; // immediate, [0x85D124] = 1.0f
+
+static void InstallAudioPitchFix(void)
+{
+    if (!g_cfg.fix3dAudio)
+        return;
+    if ((uintptr_t)GetModuleHandleA(NULL) != EXE_BASE)
+        return;
+
+    const unsigned char one[4] = { 0x00, 0x00, 0x80, 0x3F }; // 1.0f
+    const unsigned char zero[4] = { 0x00, 0x00, 0x00, 0x00 };
+
+    if (memcmp((void*)AUDIO_LISTENER_P0, one, 4) != 0 ||
+        memcmp((void*)AUDIO_LISTENER_P1, one, 4) != 0)
+    {
+        LogRaw("NOT INSTALLED: 3D audio pitch patch byte mismatch");
+        return;
+    }
+
+    bool ok = PatchBytes((void*)AUDIO_LISTENER_P0, zero, 4) &&
+              PatchBytes((void*)AUDIO_LISTENER_P1, zero, 4);
+
+    LogRaw(ok ? "3D audio pitch fix installed (listener distance/rolloff = 0)"
+              : "NOT INSTALLED: 3D audio pitch patch failed");
+}
+
+// ---------------------------------------------------------------------------
+// Optional: audio sequence scale divide-by-zero guard
+//
+//   RVA 0x2F14B9  33 D2        xor edx,edx
+//   RVA 0x2F14BB  F7 F6        div esi        <- 0xC0000094 when esi == 0
+//   RVA 0x2F14BD  8B 89 ...    mov ecx,[ecx+0x7F6BCC]
+//
+// esi = j * table[24*i+4]; when that scale collapses to 0 the game dies inside
+// the audio sequence actions (seen in a SeqActionStream call path). The stub
+// forces the divisor to 1 in that case, like the RandomRange guard, and runs
+// the original instructions otherwise.
+// ---------------------------------------------------------------------------
+static const uintptr_t AUDIO_SCALE_SITE = 0x006F14B9;
+static const uintptr_t AUDIO_SCALE_CONT = 0x006F14C3;
+
+static bool AudioStubFits(uintptr_t base)
+{
+    return Rel32Fits(AUDIO_SCALE_SITE + 5, base) &&
+           Rel32Fits(base + 24, AUDIO_SCALE_CONT);
+}
+
+static void InstallAudioDivGuard(void)
+{
+    if (!g_cfg.guardAudioDiv)
+        return;
+    if ((uintptr_t)GetModuleHandleA(NULL) != EXE_BASE)
+        return;
+
+    const unsigned char expect[5] = { 0x33, 0xD2, 0xF7, 0xF6, 0x8B };
+    if (memcmp((void*)AUDIO_SCALE_SITE, expect, 5) != 0)
+    {
+        LogRaw("NOT INSTALLED: audio divide guard byte mismatch");
+        return;
+    }
+
+    static __declspec(align(16)) unsigned char buf[64];
+    unsigned char* s = NULL;
+    if (AudioStubFits((uintptr_t)buf))
+    {
+        DWORD old = 0;
+        if (VirtualProtect(buf, sizeof(buf), PAGE_EXECUTE_READWRITE, &old))
+            s = buf;
+    }
+    if (!s)
+    {
+        const uintptr_t hints[] = { 0x30000000u, 0x20000000u, 0x50000000u,
+                                    0x10000000u, 0x60000000u, 0x08000000u };
+        for (size_t i = 0; i < sizeof(hints) / sizeof(hints[0]) && !s; i++)
+        {
+            void* q = VirtualAlloc((void*)hints[i], 0x1000,
+                                   MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+            if (q && AudioStubFits((uintptr_t)q)) s = (unsigned char*)q;
+            else if (q) VirtualFree(q, 0, MEM_RELEASE);
+        }
+    }
+    if (!s)
+    {
+        LogRaw("NOT INSTALLED: no reachable memory for audio divide guard");
+        return;
+    }
+
+    size_t o = 0;
+    s[o++] = 0x85; s[o++] = 0xF6;                         // test esi,esi
+    s[o++] = 0x75; s[o++] = 0x05;                         // jnz +5
+    s[o++] = 0xBE; s[o++] = 0x01; s[o++] = 0x00;          // mov esi,1
+    s[o++] = 0x00; s[o++] = 0x00;
+    s[o++] = 0x33; s[o++] = 0xD2;                         // xor edx,edx
+    s[o++] = 0xF7; s[o++] = 0xF6;                         // div esi
+    s[o++] = 0x8B; s[o++] = 0x89; s[o++] = 0xCC;          // mov ecx,[ecx+0x7F6BCC]
+    s[o++] = 0x6B; s[o++] = 0x7F; s[o++] = 0x00;
+    s[o++] = 0xE9;                                         // jmp cont
+    int32_t r = (int32_t)((intptr_t)AUDIO_SCALE_CONT - (intptr_t)(s + o + 4));
+    memcpy(s + o, &r, 4); o += 4;
+
+    FlushInstructionCache(GetCurrentProcess(), s, o);
+
+    unsigned char j5[5];
+    j5[0] = 0xE9;
+    r = (int32_t)((intptr_t)s - (intptr_t)(AUDIO_SCALE_SITE + 5));
+    memcpy(j5 + 1, &r, 4);
+
+    LogRaw(PatchBytes((void*)AUDIO_SCALE_SITE, j5, 5)
+               ? "Audio sequence divide guard installed at scarface.exe+0x2F14B9"
+               : "NOT INSTALLED: audio divide guard patch failed");
+}
+
+// ---------------------------------------------------------------------------
 // Crash logging (first-chance, does not change exception handling)
 // ---------------------------------------------------------------------------
 struct SeenCrash { DWORD code; uintptr_t rva; unsigned count; };
@@ -915,6 +1087,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID)
 
         BuildPaths();
         WriteDefaultIni();
+        EnsureIniKeys();
         LoadConfig();
         if (g_cfg.logging)
             EnsureWritableLogDir();
@@ -927,9 +1100,10 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID)
         char hello[256];
         _snprintf_s(hello, sizeof(hello), _TRUNCATE,
                     "RngGuard loaded (guards=%d logging=%d cap=%dKB badRanges=%d "
-                    "invalidLists=%d crashes=%d stacks=%d)",
+                    "invalidLists=%d crashes=%d stacks=%d audioPitchFix=%d)",
                     g_cfg.guards, g_cfg.logging, g_cfg.maxKB, g_cfg.logBadRanges,
-                    g_cfg.logInvalidLists, g_cfg.logCrashes, g_cfg.logStack);
+                    g_cfg.logInvalidLists, g_cfg.logCrashes, g_cfg.logStack,
+                    g_cfg.fix3dAudio);
         LogRaw(hello);
 
         if (g_cfg.guards)
@@ -943,6 +1117,9 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID)
         {
             LogRaw("Guards disabled by Scarface.RngGuard.ini");
         }
+
+        InstallAudioPitchFix();
+        InstallAudioDivGuard();
 
         AddVectoredExceptionHandler(1, OnException);
     }

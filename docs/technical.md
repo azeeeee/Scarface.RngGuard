@@ -164,6 +164,43 @@ spawn. The world repopulates on later ticks.
 
 ---
 
+## Optional fixes (off by default)
+
+### `Fix3DAudioPitch` — 3D audio pitch changes
+
+`scarface.exe` initialises its 3D listener at RVA `0x2EF190`. After the
+position / velocity / orientation vectors, three floats are set to `1.0`
+(globals `0x85D120`, `0x85D124`, `0x85D128`). The mixer uses the first two as a
+distance / rolloff scale that modulates the playback pitch of 3D sounds as they
+move relative to the camera.
+
+The option rewrites the two immediates:
+
+| RVA | Original | Patched |
+|---|---|---|
+| `0x2EF21C` | `00 00 80 3F` (1.0f) | `00 00 00 00` (0.0f) |
+| `0x2EF226` | `00 00 80 3F` (1.0f) | `00 00 00 00` (0.0f) |
+
+This is the same change GangstaPatch makes for its "3D Audio causing pitch
+changes" fix (located by reversing `GangstaPatch.asi`, `FUN_10006c68`).
+
+### `GuardAudioDivZero` — audio sequence scale fault
+
+RVA `0x2F14B9` computes `esi = j * table[24*i + 4]` and then divides by it:
+
+```
+2F14B9  33 D2        xor edx,edx
+2F14BB  F7 F6        div esi          <- 0xC0000094 when esi == 0
+2F14BD  8B 89 ...    mov ecx,[ecx+0x7F6BCC]
+```
+
+When the scale collapses to 0 this crashes inside the audio sequence actions
+(observed in a `SeqActionStream@audio` call path). The option installs a
+5-byte jump to a stub that forces `esi = 1` in that case and otherwise runs the
+original instructions, so the game never divides by zero there.
+
+---
+
 ## Build
 
 ```

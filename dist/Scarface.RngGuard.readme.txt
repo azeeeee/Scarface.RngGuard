@@ -38,6 +38,18 @@ The only setting most people need:
 
 Everything else in the file can stay as it is.
 
+Optional fixes
+-------------
+Two audio fixes are off by default. To enable them, edit the [Fixes]
+section of Scarface.RngGuard.ini:
+
+    [Fixes]
+    Fix3DAudioPitch=1     ; 3D sounds no longer change pitch with distance
+    GuardAudioDivZero=1   ; prevents a rare crash in the audio sequencer
+
+Set the value to 1 and restart the game. Set it back to 0 to turn the
+fix off again.
+
 The log file is limited to 1 MB by default. When it reaches that size it is
 renamed to Scarface.RngGuard.log.old and a new log is started, so it will not
 fill up your disk.
