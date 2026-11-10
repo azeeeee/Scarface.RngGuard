@@ -16,3 +16,6 @@ Scarface.RngGuard.ini
 Thumbs.db
 desktop.ini
 .vs/
+
+# Local reverse-engineering notes (kept out of the published repo)
+AGENTS.md
