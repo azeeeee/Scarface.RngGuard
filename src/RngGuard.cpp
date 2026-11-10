@@ -1,5 +1,8 @@
 // Scarface - RandomRange guard + crash logger (ASI plugin)
 //
+// NOTE: this plugin, including the crash analysis and every runtime patch,
+// was produced entirely by an AI assistant.
+//
 // Built for scarface.exe 1.0.0.2 (time stamp 0x455CAD51, image base 0x400000).
 //
 // What it does:

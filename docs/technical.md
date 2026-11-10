@@ -1,5 +1,8 @@
 # Technical notes
 
+> **Note:** this fix, its analysis and all code in this repository were created
+> entirely by an AI assistant.
+
 Target: `scarface.exe` **1.0.0.2**, time stamp `0x455CAD51`, image base
 `0x400000`, `SizeOfImage` `0x5FC000`.
 
