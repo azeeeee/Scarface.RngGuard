@@ -199,47 +199,6 @@ When the scale collapses to 0 this crashes inside the audio sequence actions
 5-byte jump to a stub that forces `esi = 1` in that case and otherwise runs the
 original instructions, so the game never divides by zero there.
 
-### `MissionProbe` — experimental M_A1A diagnostic (`[Debug]`)
-
-Off by default; needs `Logging=1` to produce output.
-
-`M_A1A` stage 1 runs:
-
-```c
-if (getObject("M_A1A_HotGoodsVan")) { ...objective... }
-```
-
-`getObject` is the native `FindObject` at RVA `0x444540`. If the van hasn't
-spawned yet the whole block is skipped, so the mission appears dead.
-
-The probe:
-
-* hooks `FindObject` at `0x444540` (5-byte jump + a trampoline that replays
-  `sub esp,0x104; push ebp` and resumes at `0x444547`). The function takes
-  **two** arguments — `FindObject(name, mode)`; the game's own wrapper at
-  `0x438F20` passes `push 0; push name`. The hook must forward both, otherwise
-  every lookup gets a garbage `mode` and callers such as `MissionHUD` store
-  null layer pointers;
-* logs every lookup whose name contains `M_A1A`, `HotGoods` or `FrontManager_A1`
-  together with the returned pointer;
-* when `M_A1A_HotGoodsVan` is first queried it starts a 15-second window and
-  polls the same lookup every 250 ms (driven from the `PeekMessageA` IAT slot,
-  `0x9CE708`, installed lazily on the first `FindObject` call, restricted to
-  the game thread), logging only when presence changes.
-
-A failing run then looks like:
-
-```
-PROBE lookup "M_A1A_HotGoodsVan" -> 00000000 (absent)
-PROBE +0ms M_A1A_HotGoodsVan = absent (00000000)
-PROBE +4321ms M_A1A_HotGoodsVan = PRESENT (0C5A1F80)
-PROBE window finished (15 s)
-```
-
-If the second line is followed by `PRESENT` after a few seconds, the spawn was
-simply late (streaming/scheduling). If it stays `absent` for the whole window,
-the spawn object never produced the van.
-
 ---
 
 ## Build

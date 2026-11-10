@@ -48,10 +48,6 @@ GuardAudioDivZero=1   ; prevent a rare divide-by-zero in the audio sequencer
 "3D Audio causing pitch changes" fix). Both options are opt-in because they
 change audio behaviour; the crash guards stay on by default.
 
-There is also an experimental diagnostic under `[Debug]` (`MissionProbe=1`,
-requires `Logging=1`) that watches the `M_A1A` mission's vehicle lookup — see
-[docs/technical.md](docs/technical.md).
-
 ## Build
 
 ```
