@@ -52,9 +52,10 @@ struct Config
     int logStack;        // LogStackTraces
     int fix3dAudio;      // Fix3DAudioPitch
     int guardAudioDiv;   // GuardAudioDivZero
+    int missionProbe;    // MissionProbe (experimental debug)
 };
 
-static Config g_cfg = { 1, 1, 1024, 1, 1, 1, 1, 0, 0 };
+static Config g_cfg = { 1, 1, 1024, 1, 1, 1, 1, 0, 0, 0 };
 static char   g_iniPath[MAX_PATH];
 
 #define INI_SECTION "General"
@@ -115,7 +116,13 @@ static void WriteDefaultIni(void)
         "\r\n"
         "; Prevent a rare divide-by-zero in the audio sequence scale helper\r\n"
         "; (would otherwise crash the game). 1 = enabled, 0 = off.\r\n"
-        "GuardAudioDivZero=0\r\n";
+        "GuardAudioDivZero=0\r\n"
+        "\r\n"
+        "[Debug]\r\n"
+        "; Experimental diagnostic for the M_A1A (Pedro's Pawn Shop) mission.\r\n"
+        "; Logs every M_A1A object lookup and polls M_A1A_HotGoodsVan for 15s\r\n"
+        "; after the mission first asks for it. Requires Logging=1.\r\n"
+        "MissionProbe=0\r\n";
 
     HANDLE h = CreateFileA(g_iniPath, GENERIC_WRITE, 0, NULL,
                            CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -128,35 +135,51 @@ static void WriteDefaultIni(void)
 }
 
 // Append keys added by newer builds to an ini created by an older one.
-static void EnsureIniKeys(void)
+static bool IniHasKey(const char* section, const char* key)
 {
-    if (GetFileAttributesA(g_iniPath) == INVALID_FILE_ATTRIBUTES)
-        return;
-
     char tmp[8] = { 0 };
-    if (GetPrivateProfileStringA("Fixes", "Fix3DAudioPitch", "",
-                                 tmp, sizeof(tmp), g_iniPath) != 0)
-        return; // already present
+    return GetPrivateProfileStringA(section, key, "", tmp, sizeof(tmp), g_iniPath) != 0;
+}
 
+static void AppendIniBlock(const char* text)
+{
     HANDLE h = CreateFileA(g_iniPath, FILE_APPEND_DATA,
                            FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (h == INVALID_HANDLE_VALUE)
         return;
-
-    static const char kAdd[] =
-        "\r\n[Fixes]\r\n"
-        "; Stops 3D-positioned sounds from changing pitch with distance\r\n"
-        "; (the same listener change GangstaPatch makes). 1 = enabled, 0 = off.\r\n"
-        "Fix3DAudioPitch=0\r\n"
-        "\r\n"
-        "; Prevent a rare divide-by-zero in the audio sequence scale helper\r\n"
-        "; (would otherwise crash the game). 1 = enabled, 0 = off.\r\n"
-        "GuardAudioDivZero=0\r\n";
-
     DWORD written = 0;
-    WriteFile(h, kAdd, (DWORD)(sizeof(kAdd) - 1), &written, NULL);
+    WriteFile(h, text, (DWORD)strlen(text), &written, NULL);
     CloseHandle(h);
+}
+
+static void EnsureIniKeys(void)
+{
+    if (GetFileAttributesA(g_iniPath) == INVALID_FILE_ATTRIBUTES)
+        return;
+
+    if (!IniHasKey("Fixes", "Fix3DAudioPitch"))
+    {
+        AppendIniBlock(
+            "\r\n[Fixes]\r\n"
+            "; Stops 3D-positioned sounds from changing pitch with distance\r\n"
+            "; (the same listener change GangstaPatch makes). 1 = enabled, 0 = off.\r\n"
+            "Fix3DAudioPitch=0\r\n"
+            "\r\n"
+            "; Prevent a rare divide-by-zero in the audio sequence scale helper\r\n"
+            "; (would otherwise crash the game). 1 = enabled, 0 = off.\r\n"
+            "GuardAudioDivZero=0\r\n");
+    }
+
+    if (!IniHasKey("Debug", "MissionProbe"))
+    {
+        AppendIniBlock(
+            "\r\n[Debug]\r\n"
+            "; Experimental diagnostic for the M_A1A (Pedro's Pawn Shop) mission.\r\n"
+            "; Logs every M_A1A object lookup and polls M_A1A_HotGoodsVan for 15s\r\n"
+            "; after the mission first asks for it. Requires Logging=1.\r\n"
+            "MissionProbe=0\r\n");
+    }
 }
 
 static void LoadConfig(void)
@@ -179,6 +202,7 @@ static void LoadConfig(void)
     g_cfg.logStack        = IniInt2(INI_ADVANCED, "Settings", "LogStackTraces", 1);
     g_cfg.fix3dAudio      = IniInt2("Fixes", INI_ADVANCED, "Fix3DAudioPitch", 0);
     g_cfg.guardAudioDiv   = IniInt2("Fixes", INI_ADVANCED, "GuardAudioDivZero", 0);
+    g_cfg.missionProbe    = IniInt2("Debug", INI_ADVANCED, "MissionProbe", 0);
 
     if (g_cfg.maxKB < 0)     g_cfg.maxKB = 0;
     if (g_cfg.maxKB > 65536) g_cfg.maxKB = 65536;
@@ -973,6 +997,205 @@ static void InstallAudioDivGuard(void)
 }
 
 // ---------------------------------------------------------------------------
+// Experimental: M_A1A mission probe (debug only, off by default)
+//
+// The M_A1A stage-1 script does:
+//     if (getObject("M_A1A_HotGoodsVan")) { ...objective... }
+// getObject() is the native FindObject at RVA 0x444540. If the van has not
+// been spawned yet, the whole stage setup is skipped and the mission looks
+// dead. This probe logs every M_A1A lookup, then polls the van for 15 seconds
+// (throttled, on the game thread through the PeekMessageA import) so the log
+// shows how long the spawn actually took.
+// ---------------------------------------------------------------------------
+static const uintptr_t FIND_OBJECT_VA     = 0x00444540;
+static const uintptr_t FIND_OBJECT_RESUME = 0x00444547; // after "sub esp,104; push ebp"
+static const uintptr_t PEEK_MESSAGE_IAT   = 0x009CE708;
+
+typedef void* (__cdecl *FindObjectFn)(const char* name);
+typedef BOOL (WINAPI *PeekMessageFn)(LPMSG, HWND, UINT, UINT, UINT);
+
+static FindObjectFn  g_findObjectReal = NULL;
+static PeekMessageFn g_peekMessageReal = NULL;
+
+static BOOL WINAPI PeekMessageHook(LPMSG, HWND, UINT, UINT, UINT);
+
+static volatile LONG g_probeArmed = 0;
+static volatile LONG g_probeBusy = 0;
+static volatile LONG g_peekHooked = 0;
+static DWORD g_mainThreadId = 0;
+static DWORD g_probeStart = 0;
+static DWORD g_probeLast = 0;
+static int   g_probePresent = -1;
+
+// The exe's IAT is not resolved yet when the ASI loads, so install the
+// PeekMessageA tick lazily on the first FindObject call (game is running then).
+static void EnsurePeekHook(void)
+{
+    if (InterlockedCompareExchange(&g_peekHooked, 1, 0) != 0)
+        return;
+
+    g_peekMessageReal = (PeekMessageFn)*(void**)PEEK_MESSAGE_IAT;
+    void* hook = (void*)&PeekMessageHook;
+    if (!g_peekMessageReal ||
+        !PatchBytes((void*)PEEK_MESSAGE_IAT, &hook, 4))
+    {
+        g_peekMessageReal = NULL;
+        InterlockedExchange(&g_peekHooked, 0);
+        return;
+    }
+    LogRaw("Mission probe: PeekMessageA tick installed");
+}
+
+static bool ProbeNameInteresting(const char* name)
+{
+    return strncmp(name, "M_A1A", 5) == 0 ||
+           strstr(name, "HotGoods") != NULL ||
+           strstr(name, "FrontManager_A1") != NULL;
+}
+
+static void* __cdecl FindObjectHook(const char* name)
+{
+    void* r = g_findObjectReal(name);
+
+    if (g_cfg.missionProbe)
+    {
+        if (g_mainThreadId == 0)
+            g_mainThreadId = GetCurrentThreadId();
+        EnsurePeekHook();
+
+        if (name && name[0] && ProbeNameInteresting(name))
+        {
+            char buf[256];
+            _snprintf_s(buf, sizeof(buf), _TRUNCATE,
+                        "PROBE lookup \"%s\" -> %p (%s)",
+                        name, r, r ? "present" : "absent");
+            LogRaw(buf);
+
+            if (strstr(name, "HotGoods") != NULL &&
+                InterlockedExchange(&g_probeArmed, 1) == 0)
+            {
+                g_probeStart = GetTickCount();
+                g_probeLast = 0;
+                g_probePresent = r ? 1 : 0;
+            }
+        }
+    }
+    return r;
+}
+
+static void ProbeTick(void)
+{
+    if (!g_probeArmed || !g_findObjectReal)
+        return;
+    if (g_mainThreadId != 0 && GetCurrentThreadId() != g_mainThreadId)
+        return; // only query the engine from the thread that runs the game
+    if (InterlockedExchange(&g_probeBusy, 1) != 0)
+        return;
+
+    DWORD now = GetTickCount();
+    DWORD elapsed = now - g_probeStart;
+
+    if (elapsed > 15000)
+    {
+        InterlockedExchange(&g_probeArmed, 0);
+        LogRaw("PROBE window finished (15 s)");
+    }
+    else if (now - g_probeLast >= 250)
+    {
+        g_probeLast = now;
+        void* obj = g_findObjectReal("M_A1A_HotGoodsVan");
+        int present = obj ? 1 : 0;
+        if (present != g_probePresent)
+        {
+            g_probePresent = present;
+            char buf[192];
+            _snprintf_s(buf, sizeof(buf), _TRUNCATE,
+                        "PROBE +%lums M_A1A_HotGoodsVan = %s (%p)",
+                        (unsigned long)elapsed,
+                        present ? "PRESENT" : "absent", obj);
+            LogRaw(buf);
+        }
+    }
+
+    InterlockedExchange(&g_probeBusy, 0);
+}
+
+static BOOL WINAPI PeekMessageHook(LPMSG msg, HWND hwnd, UINT mn, UINT mx, UINT remove)
+{
+    BOOL r = g_peekMessageReal(msg, hwnd, mn, mx, remove);
+    if (g_cfg.missionProbe)
+        ProbeTick();
+    return r;
+}
+
+static void InstallMissionProbe(void)
+{
+    if (!g_cfg.missionProbe)
+        return;
+    if ((uintptr_t)GetModuleHandleA(NULL) != EXE_BASE)
+        return;
+
+    const unsigned char expect[7] = { 0x81, 0xEC, 0x04, 0x01, 0x00, 0x00, 0x55 };
+    if (memcmp((void*)FIND_OBJECT_VA, expect, 7) != 0)
+    {
+        LogRaw("NOT INSTALLED: mission probe FindObject byte mismatch");
+        return;
+    }
+
+    static __declspec(align(16)) unsigned char buf[64];
+    unsigned char* t = NULL;
+
+    if (Rel32Fits(FIND_OBJECT_VA + 5, (uintptr_t)buf) &&
+        Rel32Fits((uintptr_t)buf + 12, FIND_OBJECT_RESUME))
+    {
+        DWORD old = 0;
+        if (VirtualProtect(buf, sizeof(buf), PAGE_EXECUTE_READWRITE, &old))
+            t = buf;
+    }
+    if (!t)
+    {
+        const uintptr_t hints[] = { 0x30000000u, 0x20000000u, 0x50000000u,
+                                    0x10000000u, 0x60000000u, 0x08000000u };
+        for (size_t i = 0; i < sizeof(hints) / sizeof(hints[0]) && !t; i++)
+        {
+            void* q = VirtualAlloc((void*)hints[i], 0x1000,
+                                   MEM_RESERVE | MEM_COMMIT, PAGE_EXECUTE_READWRITE);
+            if (q && Rel32Fits(FIND_OBJECT_VA + 5, (uintptr_t)q) &&
+                Rel32Fits((uintptr_t)q + 12, FIND_OBJECT_RESUME))
+                t = (unsigned char*)q;
+            else if (q) VirtualFree(q, 0, MEM_RELEASE);
+        }
+    }
+    if (!t)
+    {
+        LogRaw("NOT INSTALLED: no reachable memory for mission probe");
+        return;
+    }
+
+    memset(t, 0, 16);
+    memcpy(t, expect, 7);                     // sub esp,104; push ebp
+    t[7] = 0xE9;                              // jmp back to 0x444547
+    int32_t r = (int32_t)((intptr_t)FIND_OBJECT_RESUME - (intptr_t)(t + 12));
+    memcpy(t + 8, &r, 4);
+    FlushInstructionCache(GetCurrentProcess(), t, 12);
+
+    g_findObjectReal = (FindObjectFn)t;
+
+    unsigned char j5[5];
+    j5[0] = 0xE9;
+    r = (int32_t)((intptr_t)&FindObjectHook - (intptr_t)(FIND_OBJECT_VA + 5));
+    memcpy(j5 + 1, &r, 4);
+    if (!PatchBytes((void*)FIND_OBJECT_VA, j5, 5))
+    {
+        g_findObjectReal = NULL;
+        LogRaw("NOT INSTALLED: mission probe FindObject patch failed");
+        return;
+    }
+
+    LogRaw("Mission probe armed (experimental): M_A1A lookups + 15 s van poll");
+}
+
+// ---------------------------------------------------------------------------
 // Crash logging (first-chance, does not change exception handling)
 // ---------------------------------------------------------------------------
 struct SeenCrash { DWORD code; uintptr_t rva; unsigned count; };
@@ -1100,10 +1323,10 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID)
         char hello[256];
         _snprintf_s(hello, sizeof(hello), _TRUNCATE,
                     "RngGuard loaded (guards=%d logging=%d cap=%dKB badRanges=%d "
-                    "invalidLists=%d crashes=%d stacks=%d audioPitchFix=%d)",
+                    "invalidLists=%d crashes=%d stacks=%d audioPitchFix=%d probe=%d)",
                     g_cfg.guards, g_cfg.logging, g_cfg.maxKB, g_cfg.logBadRanges,
                     g_cfg.logInvalidLists, g_cfg.logCrashes, g_cfg.logStack,
-                    g_cfg.fix3dAudio);
+                    g_cfg.fix3dAudio, g_cfg.missionProbe);
         LogRaw(hello);
 
         if (g_cfg.guards)
@@ -1120,6 +1343,7 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID)
 
         InstallAudioPitchFix();
         InstallAudioDivGuard();
+        InstallMissionProbe();
 
         AddVectoredExceptionHandler(1, OnException);
     }
