@@ -1,4 +1,4 @@
-# Technical notes
+﻿# Technical notes
 
 > **Note:** this fix, its analysis and all code in this repository were created
 > entirely by an AI assistant.
@@ -106,7 +106,7 @@ INVALID PICKER LIST (bad size) begin=0x34A69046 end=0xB34E307B
 ```
 
 `0xB34E307B` is not a valid user-mode address, so the whole structure had been
-overwritten/recycled — consistent with the spawner being used while the world
+overwritten/recycled â€” consistent with the spawner being used while the world
 is being torn down and rebuilt.
 
 ---
@@ -164,9 +164,9 @@ spawn. The world repopulates on later ticks.
 
 ---
 
-## Optional fixes (off by default)
+## Optional fixes (on by default)
 
-### `Fix3DAudioPitch` — 3D audio pitch changes
+### `Fix3DAudioPitch` â€” 3D audio pitch changes
 
 `scarface.exe` initialises its 3D listener at RVA `0x2EF190`. After the
 position / velocity / orientation vectors, three floats are set to `1.0`
@@ -184,7 +184,7 @@ The option rewrites the two immediates:
 This is the same change GangstaPatch makes for its "3D Audio causing pitch
 changes" fix (located by reversing `GangstaPatch.asi`, `FUN_10006c68`).
 
-### `GuardAudioDivZero` — audio sequence scale fault
+### `GuardAudioDivZero` â€” audio sequence scale fault
 
 RVA `0x2F14B9` computes `esi = j * table[24*i + 4]` and then divides by it:
 
@@ -212,3 +212,4 @@ build.bat
 Build flags: `/LD /MT /O2 /GS- /MACHINE:X86`. The result imports only
 `KERNEL32.dll`; `RtlCaptureStackBackTrace` is resolved from `ntdll.dll` at
 run time.
+

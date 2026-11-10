@@ -1,4 +1,4 @@
-// Scarface - RandomRange guard + crash logger (ASI plugin)
+﻿// Scarface - RandomRange guard + crash logger (ASI plugin)
 //
 // NOTE: this plugin, including the crash analysis and every runtime patch,
 // was produced entirely by an AI assistant.
@@ -56,7 +56,7 @@ struct Config
     int guardAudioDiv;   // GuardAudioDivZero
 };
 
-static Config g_cfg = { 1, 1, 1024, 1, 1, 1, 1, 0, 0 };
+static Config g_cfg = { 1, 1, 1024, 1, 1, 1, 1, 1, 1 };
 static char   g_iniPath[MAX_PATH];
 
 #define INI_SECTION "General"
@@ -112,12 +112,12 @@ static void WriteDefaultIni(void)
         "\r\n"
         "[Fixes]\r\n"
         "; Stops 3D-positioned sounds from changing pitch with distance\r\n"
-        "; (the same listener change GangstaPatch makes). 1 = enabled, 0 = off.\r\n"
-        "Fix3DAudioPitch=0\r\n"
+        "; (the same listener change GangstaPatch makes). 1 = enabled (default), 0 = off.\r\n"
+        "Fix3DAudioPitch=1\r\n"
         "\r\n"
         "; Prevent a rare divide-by-zero in the audio sequence scale helper\r\n"
-        "; (would otherwise crash the game). 1 = enabled, 0 = off.\r\n"
-        "GuardAudioDivZero=0\r\n";
+        "; (would otherwise crash the game). 1 = enabled (default), 0 = off.\r\n"
+        "GuardAudioDivZero=1\r\n";
 
     HANDLE h = CreateFileA(g_iniPath, GENERIC_WRITE, 0, NULL,
                            CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -158,12 +158,12 @@ static void EnsureIniKeys(void)
         AppendIniBlock(
             "\r\n[Fixes]\r\n"
             "; Stops 3D-positioned sounds from changing pitch with distance\r\n"
-            "; (the same listener change GangstaPatch makes). 1 = enabled, 0 = off.\r\n"
-            "Fix3DAudioPitch=0\r\n"
+            "; (the same listener change GangstaPatch makes). 1 = enabled (default), 0 = off.\r\n"
+            "Fix3DAudioPitch=1\r\n"
             "\r\n"
             "; Prevent a rare divide-by-zero in the audio sequence scale helper\r\n"
-            "; (would otherwise crash the game). 1 = enabled, 0 = off.\r\n"
-            "GuardAudioDivZero=0\r\n");
+            "; (would otherwise crash the game). 1 = enabled (default), 0 = off.\r\n"
+            "GuardAudioDivZero=1\r\n");
     }
 }
 
@@ -185,8 +185,8 @@ static void LoadConfig(void)
     g_cfg.logInvalidLists = IniInt2(INI_ADVANCED, "Settings", "LogInvalidLists", 1);
     g_cfg.logCrashes      = IniInt2(INI_ADVANCED, "Settings", "LogCrashes", 1);
     g_cfg.logStack        = IniInt2(INI_ADVANCED, "Settings", "LogStackTraces", 1);
-    g_cfg.fix3dAudio      = IniInt2("Fixes", INI_ADVANCED, "Fix3DAudioPitch", 0);
-    g_cfg.guardAudioDiv   = IniInt2("Fixes", INI_ADVANCED, "GuardAudioDivZero", 0);
+    g_cfg.fix3dAudio      = IniInt2("Fixes", INI_ADVANCED, "Fix3DAudioPitch", 1);
+    g_cfg.guardAudioDiv   = IniInt2("Fixes", INI_ADVANCED, "GuardAudioDivZero", 1);
 
     if (g_cfg.maxKB < 0)     g_cfg.maxKB = 0;
     if (g_cfg.maxKB > 65536) g_cfg.maxKB = 65536;
@@ -1134,3 +1134,4 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID)
     }
     return TRUE;
 }
+

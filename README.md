@@ -1,10 +1,10 @@
-# Scarface RngGuard
+﻿# Scarface RngGuard
 
 > **Note:** this fix, its analysis and all code in this repository were created
 > entirely by an AI assistant.
 
 An ASI plugin for **Scarface: The World Is Yours 1.0.0.2** that prevents a crash
-on mission loading screens — typically when the player dies and the game
+on mission loading screens â€” typically when the player dies and the game
 reloads the mission/level. It was reported on the **Gaspar Gomez** mission.
 
 The game's ambient population spawner can be left with an empty or corrupted
@@ -34,7 +34,7 @@ Logging=1     ; 0 = do not write a log file
 Advanced options (log size cap, individual log categories, guard toggle) are in
 the generated file under `[Advanced]` and normally do not need changing.
 
-## Optional fixes (off by default)
+## Optional fixes (on by default)
 
 Under `[Fixes]` in the ini:
 
@@ -45,8 +45,8 @@ GuardAudioDivZero=1   ; prevent a rare divide-by-zero in the audio sequencer
 ```
 
 `Fix3DAudioPitch` reproduces the 3D listener change GangstaPatch makes (its
-"3D Audio causing pitch changes" fix). Both options are opt-in because they
-change audio behaviour; the crash guards stay on by default.
+"3D Audio causing pitch changes" fix). Both options are now on by default; set
+them to `0` if they cause problems. The crash guards remain on by default.
 
 ## Build
 
@@ -59,3 +59,4 @@ Requires the 32-bit MSVC toolset. The plugin is written in C++ and builds to
 
 See [docs/technical.md](docs/technical.md) for the crash analysis and the
 runtime patches.
+
