@@ -215,7 +215,11 @@ spawned yet the whole block is skipped, so the mission appears dead.
 The probe:
 
 * hooks `FindObject` at `0x444540` (5-byte jump + a trampoline that replays
-  `sub esp,0x104; push ebp` and resumes at `0x444547`);
+  `sub esp,0x104; push ebp` and resumes at `0x444547`). The function takes
+  **two** arguments — `FindObject(name, mode)`; the game's own wrapper at
+  `0x438F20` passes `push 0; push name`. The hook must forward both, otherwise
+  every lookup gets a garbage `mode` and callers such as `MissionHUD` store
+  null layer pointers;
 * logs every lookup whose name contains `M_A1A`, `HotGoods` or `FrontManager_A1`
   together with the returned pointer;
 * when `M_A1A_HotGoodsVan` is first queried it starts a 15-second window and

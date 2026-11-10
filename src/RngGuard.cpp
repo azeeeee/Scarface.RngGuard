@@ -27,6 +27,8 @@
 #include <string.h>
 #include <intrin.h>
 
+#define RNGUARD_VERSION "1.2"
+
 // ---------------------------------------------------------------------------
 // Addresses for scarface.exe 1.0.0.2
 // ---------------------------------------------------------------------------
@@ -1011,7 +1013,10 @@ static const uintptr_t FIND_OBJECT_VA     = 0x00444540;
 static const uintptr_t FIND_OBJECT_RESUME = 0x00444547; // after "sub esp,104; push ebp"
 static const uintptr_t PEEK_MESSAGE_IAT   = 0x009CE708;
 
-typedef void* (__cdecl *FindObjectFn)(const char* name);
+// FindObject(name, mode) - two arguments. The game's own wrapper at 0x438F20
+// does `push 0; push name; call 0x444540`, so the second argument must be
+// forwarded unchanged. Passing only one argument corrupts every lookup.
+typedef void* (__cdecl *FindObjectFn)(const char* name, int mode);
 typedef BOOL (WINAPI *PeekMessageFn)(LPMSG, HWND, UINT, UINT, UINT);
 
 static FindObjectFn  g_findObjectReal = NULL;
@@ -1053,9 +1058,9 @@ static bool ProbeNameInteresting(const char* name)
            strstr(name, "FrontManager_A1") != NULL;
 }
 
-static void* __cdecl FindObjectHook(const char* name)
+static void* __cdecl FindObjectHook(const char* name, int mode)
 {
-    void* r = g_findObjectReal(name);
+    void* r = g_findObjectReal(name, mode);
 
     if (g_cfg.missionProbe)
     {
@@ -1103,7 +1108,7 @@ static void ProbeTick(void)
     else if (now - g_probeLast >= 250)
     {
         g_probeLast = now;
-        void* obj = g_findObjectReal("M_A1A_HotGoodsVan");
+        void* obj = g_findObjectReal("M_A1A_HotGoodsVan", 0);
         int present = obj ? 1 : 0;
         if (present != g_probePresent)
         {
@@ -1322,8 +1327,9 @@ BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID)
 
         char hello[256];
         _snprintf_s(hello, sizeof(hello), _TRUNCATE,
-                    "RngGuard loaded (guards=%d logging=%d cap=%dKB badRanges=%d "
-                    "invalidLists=%d crashes=%d stacks=%d audioPitchFix=%d probe=%d)",
+                    "RngGuard v" RNGUARD_VERSION " loaded (guards=%d logging=%d "
+                    "cap=%dKB badRanges=%d invalidLists=%d crashes=%d stacks=%d "
+                    "audioPitchFix=%d probe=%d)",
                     g_cfg.guards, g_cfg.logging, g_cfg.maxKB, g_cfg.logBadRanges,
                     g_cfg.logInvalidLists, g_cfg.logCrashes, g_cfg.logStack,
                     g_cfg.fix3dAudio, g_cfg.missionProbe);
