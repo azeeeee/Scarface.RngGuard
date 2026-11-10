@@ -27,6 +27,56 @@ Everything below is **not** shipped.
 
 ---
 
+## Sniper / mouse look (found after the first pass)
+
+The first map was address-first, so these were present but unlabelled:
+
+| RVA | Where | What |
+|---|---|---|
+| `0x165768` | inside `GenericCharacterCamera` (vtable `0x747194`, slot 37 = `0x565640`) | camera / mouse-look update |
+| `0x18B110` | inside `SniperState` (vtable `0x749A64`), zoom-step function near `0x18B0D0` | sniper zoom step |
+
+Sniper zoom step:
+
+```
+18B10B  cmp  dword [esi+0x34], 1
+18B10E  jne  ...
+18B110  mov  eax, 2                    ; GangstaPatch patches 2 bytes here
+18B115  cmp  word [edi+0x2E], ax       ; button A
+18B11B  fld  dword [esp+0x14]
+18B11F  fmul dword [esi+0x44]          ; zoom step
+18B122  fsubr dword [esi+0x38]         ; zoom base
+18B127  cmp  word [edi+0x30], ax       ; button B
+18B12D  fld  dword [esp+0x14]
+18B131  fmul dword [esi+0x44]
+18B134  fadd  dword [esi+0x38]
+```
+
+So sniper zoom is `base (+/-) input * step`, with the two tunables at `+0x38`
+(base) and `+0x44` (step) of `SniperState`. A "zoom speed" option would scale
+`+0x44`; GangstaPatch's `[Sniper]` settings do more than that (slowdown while
+zoomed, raw wheel), so porting only the constant would change behaviour
+partially.
+
+Mouse sensitivity is a plain global, independent of the patch set:
+
+| | |
+|---|---|
+| global | `0x7BC574` (int) |
+| setter | RVA `0x2CC80` |
+| getter | RVA `0x2CC90` |
+| script names | `SetMouseSensitivityLevel` / `GetMouseSensitivityLevel` (registered at `0x31B060`) |
+
+A `MouseSensitivity=N` ini option would just need to write that global after the
+game has loaded its options (writing in `DllMain` is too early — the settings
+load overwrites it).
+
+Note that the base "slow mouse movement" problem is already covered by
+SilentPatch (`CameraSpeedMultiplier` in `settings.ini`) and FusionFix; the
+sniper-specific aim/zoom behaviour is what GangstaPatch adds on top.
+
+---
+
 ## Candidate map (extracted from `GangstaPatch.asi`)
 
 `in function` = nearest preceding `int3` boundary; `class` = MSVC RTTI of the
