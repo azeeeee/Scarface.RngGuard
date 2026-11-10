@@ -4,7 +4,7 @@
 > entirely by an AI assistant.
 
 An ASI plugin for **Scarface: The World Is Yours 1.0.0.2** that prevents a crash
-on mission loading screens â€” typically when the player dies and the game
+on mission loading screens - typically when the player dies and the game
 reloads the mission/level. It was reported on the **Gaspar Gomez** mission.
 
 The game's ambient population spawner can be left with an empty or corrupted
