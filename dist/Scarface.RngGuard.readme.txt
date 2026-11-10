@@ -1,0 +1,58 @@
+=====================================================================
+ Scarface RngGuard
+=====================================================================
+
+What this is
+-------------
+A small fix for a crash in Scarface: The World Is Yours (v1.0.0.2) that
+happens when the game loads a mission after you die - it crashes on the
+loading screen. The cause is the game's ambient population ("world
+ambience") spawner using a broken list of spawn candidates.
+
+This plugin stops that crash without modifying scarface.exe in any way.
+
+Requirements
+-------------
+- Scarface: The World Is Yours, patch 1.0.0.2
+- An ASI loader. If you use SilentPatch or Scarface Fusion Fix you already
+  have one (vorbisfile.dll in the game folder).
+
+Installation
+-------------
+1. Copy Scarface.RngGuard.asi into the folder that contains scarface.exe.
+   (You can also put it in the "scripts" subfolder.)
+2. Start the game.
+
+That's it. No other files are required.
+
+Settings
+-------------
+On the first start, Scarface.RngGuard.ini is created next to scarface.exe.
+The only setting most people need:
+
+    [General]
+    Logging=1
+
+        Logging=1  -> write Scarface.RngGuard.log (default)
+        Logging=0  -> do not write a log file
+
+Everything else in the file can stay as it is.
+
+The log file is limited to 1 MB by default. When it reaches that size it is
+renamed to Scarface.RngGuard.log.old and a new log is started, so it will not
+fill up your disk.
+
+If the game is installed in a folder Windows does not let you write to (for
+example "C:\Program Files"), the log is saved in
+%LOCALAPPDATA%\ScarfaceRngGuard\ instead.
+
+Still crashing?
+-------------
+Send Scarface.RngGuard.log (and Scarface.RngGuard.log.old, if present).
+It records the crash address and call stack, which is enough to identify
+which part of the game failed.
+
+Uninstall
+-------------
+Delete Scarface.RngGuard.asi, Scarface.RngGuard.ini,
+Scarface.RngGuard.log and Scarface.RngGuard.log.old.

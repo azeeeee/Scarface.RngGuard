@@ -1,0 +1,18 @@
+# Build output
+build/
+*.obj
+*.exp
+*.lib
+*.pdb
+*.ilk
+*.idb
+
+# Local log/config created by running the plugin
+*.log
+*.log.old
+Scarface.RngGuard.ini
+
+# OS/editor noise
+Thumbs.db
+desktop.ini
+.vs/
