@@ -85,7 +85,7 @@ and byte-verified before patching:
 
 | Key | Target (RVA) | Original → Patched |
 |---|---|---|
-| `ExpAudioTimerNop` | `0x2DF1F6` | `E8 55 FD FF FF` → `90 90 90 90 90` |
+| `ExpAffinityNoRepin` | `0x2DF1F6` | `E8 55 FD FF FF` → `90 90 90 90 90` (callee `0x6DEF50` is the single-core affinity pinner, not audio) |
 | `ExpDisplayClampNop` | `0x254058` | `83 FB 3C 73 0A` → `90 90 90 90 90` |
 | `ExpFlag654965` | `0x254965` | `44` → `40` |
 | `ExpJump4B1B38` | `0xB1B38` | `75` → `EB` |
