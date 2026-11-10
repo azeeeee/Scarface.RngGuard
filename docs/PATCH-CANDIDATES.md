@@ -77,6 +77,29 @@ sniper-specific aim/zoom behaviour is what GangstaPatch adds on top.
 
 ---
 
+## Implemented in the SilentPatch fork (default-off toggles)
+
+These four are wired into `SilentPatchScarface_testbuild.asi` under
+`[Experimental]` in `SilentPatchScarface_testbuild.ini`, all defaulting to `0`
+and byte-verified before patching:
+
+| Key | Target (RVA) | Original → Patched |
+|---|---|---|
+| `ExpAudioTimerNop` | `0x2DF1F6` | `E8 55 FD FF FF` → `90 90 90 90 90` |
+| `ExpDisplayClampNop` | `0x254058` | `83 FB 3C 73 0A` → `90 90 90 90 90` |
+| `ExpFlag654965` | `0x254965` | `44` → `40` |
+| `ExpJump4B1B38` | `0xB1B38` | `75` → `EB` |
+
+**Excluded: `0x303A20`.** That is the `D3DLOCK_DISCARD` flag SilentPatch already
+rewrites to `0`; GangstaPatch writes `0x3000`, so the two changes contradict
+each other. It is not exposed.
+
+Everything else in the table below has no extracted payload yet (GangstaPatch
+builds most of them in stack buffers at runtime), so it cannot be offered as a
+toggle until each one is decoded and verified.
+
+---
+
 ## Candidate map (extracted from `GangstaPatch.asi`)
 
 `in function` = nearest preceding `int3` boundary; `class` = MSVC RTTI of the
