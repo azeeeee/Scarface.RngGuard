@@ -35,6 +35,13 @@ Advanced options (log size cap, individual log categories, guard toggle) are in
 the generated file under `[Advanced]` and normally do not need changing.
 
 ## Optional fixes (on by default)
+> "Fix3DAudioPitch" was reverse engineered from GangstaPatch's ASI with AI Tooling, since their project is closed source.
+>
+> "GuardAudioDivZero=1" is supposed to fix a crash reported here - also related to Gaspar Gomez mission: https://github.com/GangstaTeam/GangstaPatch/issues/32
+>
+> These optional fixes were made for people who do not need the rest of GangstaPatch fixes AND additions (e.g. for speedrunners).
+>
+> If you are not a speedrunner and you would like to play Scarface with cool additions and well done fixes, get GangstaPatch here: https://github.com/GangstaTeam/GangstaPatch 
 
 Under `[Fixes]` in the ini:
 
